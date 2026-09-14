@@ -4,18 +4,30 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import ph.asana.app.auth.AuthRepository
 import ph.asana.app.data.AsaNaRepository
+import ph.asana.app.data.FavoriteRepository
 import ph.asana.app.network.model.ServiceDto
 import ph.asana.app.ui.UiState
 import javax.inject.Inject
 
+sealed interface SaveFavoriteEvent {
+    data object SignInRequired : SaveFavoriteEvent
+    data object Saved : SaveFavoriteEvent
+    data object Failed : SaveFavoriteEvent
+}
+
 @HiltViewModel
 class ServiceDetailViewModel @Inject constructor(
     private val repository: AsaNaRepository,
+    private val favoriteRepository: FavoriteRepository,
+    private val authRepository: AuthRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -23,6 +35,9 @@ class ServiceDetailViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<UiState<ServiceDto>>(UiState.Loading)
     val uiState: StateFlow<UiState<ServiceDto>> = _uiState.asStateFlow()
+
+    private val _saveEvents = MutableSharedFlow<SaveFavoriteEvent>()
+    val saveEvents = _saveEvents.asSharedFlow()
 
     init {
         load()
@@ -35,6 +50,21 @@ class ServiceDetailViewModel @Inject constructor(
                 onSuccess = { _uiState.value = UiState.Success(it) },
                 onFailure = { _uiState.value = UiState.Error("Couldn't load this service.") },
             )
+        }
+    }
+
+    fun saveFavorite() {
+        if (!authRepository.isSignedIn) {
+            viewModelScope.launch { _saveEvents.emit(SaveFavoriteEvent.SignInRequired) }
+            return
+        }
+
+        viewModelScope.launch {
+            val event = favoriteRepository.addFavorite(slug).fold(
+                onSuccess = { SaveFavoriteEvent.Saved },
+                onFailure = { SaveFavoriteEvent.Failed },
+            )
+            _saveEvents.emit(event)
         }
     }
 }

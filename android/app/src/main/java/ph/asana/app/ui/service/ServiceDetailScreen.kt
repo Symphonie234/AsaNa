@@ -20,16 +20,22 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.launch
 import ph.asana.app.network.model.OfficeDto
 import ph.asana.app.network.model.RequirementDto
 import ph.asana.app.network.model.ServiceDto
@@ -49,9 +55,22 @@ private fun formatVerifiedDate(iso: String): String =
 @Composable
 fun ServiceDetailScreen(
     onBack: () -> Unit,
+    onSignInRequired: () -> Unit,
     viewModel: ServiceDetailViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        viewModel.saveEvents.collect { event ->
+            when (event) {
+                SaveFavoriteEvent.SignInRequired -> onSignInRequired()
+                SaveFavoriteEvent.Saved -> coroutineScope.launch { snackbarHostState.showSnackbar("Saved to favorites") }
+                SaveFavoriteEvent.Failed -> coroutineScope.launch { snackbarHostState.showSnackbar("Couldn't save. Try again.") }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -60,6 +79,7 @@ fun ServiceDetailScreen(
                 navigationIcon = { OutlinedButton(onClick = onBack) { Text("Back") } },
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         when (val state = uiState) {
             is UiState.Loading -> Box(
@@ -72,13 +92,13 @@ fun ServiceDetailScreen(
                 contentAlignment = Alignment.Center,
             ) { Text(state.message) }
 
-            is UiState.Success -> ServiceDetailContent(padding, state.data)
+            is UiState.Success -> ServiceDetailContent(padding, state.data, onSave = viewModel::saveFavorite)
         }
     }
 }
 
 @Composable
-private fun ServiceDetailContent(padding: PaddingValues, service: ServiceDto) {
+private fun ServiceDetailContent(padding: PaddingValues, service: ServiceDto, onSave: () -> Unit) {
     val context = LocalContext.current
 
     LazyColumn(
@@ -116,14 +136,15 @@ private fun ServiceDetailContent(padding: PaddingValues, service: ServiceDto) {
             item { Text("Last verified: ${formatVerifiedDate(verifiedAt)}", style = MaterialTheme.typography.bodySmall) }
         }
 
-        service.office?.let { office ->
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                service.office?.let { office ->
                     Button(onClick = { openDirections(context, office) }) { Text("Directions") }
                     office.phone?.let { phone ->
                         OutlinedButton(onClick = { callOffice(context, phone) }) { Text("Contact") }
                     }
                 }
+                OutlinedButton(onClick = onSave) { Text("Save") }
             }
         }
     }
