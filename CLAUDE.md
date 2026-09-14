@@ -90,10 +90,22 @@ deliberate deviation from the resource list in the original spec doc.
 **Public API is publish-gated.** `/api/v1/*` (`app/Http/Controllers/Api`) only ever returns services with
 `status = published` — a `Service::scopePublished()` query scope applied in every index/search query, and
 an explicit check in `show()` that 404s a draft/review/outdated/archived service even if someone guesses
-its slug. This means the seeded Barangay Clearance (left in draft, see above) won't appear in the API until
-it's actually published from the admin — that's intentional, not a bug. Route model binding is by `slug`
-(`getRouteKeyName()` on `City`/`Service`), not numeric ID. `search` and the `city`/`category` filters on
-`index` share one `filteredServices()` query builder rather than duplicating the filter logic per route.
+its slug. The seeded Barangay Clearance was published from the admin during testing, so it's now visible —
+new seed content still starts in draft and needs the same manual publish step. Route model binding is by
+`slug` (`getRouteKeyName()` on `City`/`Service`), not numeric ID. `search` and the `city`/`category` filters
+on `index` share one `filteredServices()` query builder rather than duplicating the filter logic per route.
+
+**Auth is Sanctum personal access tokens, not SPA cookie auth.** `/api/v1/auth/register` and `/auth/login`
+are public (rate-limited to 5/min — see spec's brute-force concern), return a plain-text token the Android
+client stores and sends as `Authorization: Bearer <token>`. `/auth/logout`, `/me`, and `/me/favorites/*` are
+behind `auth:sanctum`. Browsing/search/service-detail stay fully open with no account required — an account
+is only needed to save a favorite — matching the spec's "simple, practical" principle over gating the core
+value prop behind signup.
+
+**Favorites is a plain pivot table, not in the original ERD.** `favorites` (`user_id`, `service_id`, unique
+together) backs `User::favoriteServices(): BelongsToMany`. The spec's ERD (section 19) never modelled this —
+only the narrative product description (section 9) did — so it was added following the same conventions as
+the rest of the schema, not literally copied from a spec table.
 
 **Entitlements are backend-owned.** The spec's monetization security model (Android sends a Google Play
 purchase token → backend verifies with Google → backend writes the `entitlements` row) is not yet
@@ -123,9 +135,9 @@ will work.
 ### Stack
 
 Kotlin, Jetpack Compose, MVVM + Repository (no separate domain/usecase layer yet — see below), Hilt for DI,
-Retrofit + OkHttp + kotlinx.serialization for networking, Room for offline caching, Navigation Compose.
-Application ID `ph.asana.app`, minSdk 26, compileSdk/targetSdk 35. Google Play Billing is not built yet —
-that's Milestone 6, not built ahead of it.
+Retrofit + OkHttp + kotlinx.serialization for networking, Room for offline caching, EncryptedSharedPreferences
+for the auth token, Navigation Compose. Application ID `ph.asana.app`, minSdk 26, compileSdk/targetSdk 35.
+Google Play Billing is not built yet — that's Milestone 6, not built ahead of it.
 
 ### Local setup
 
@@ -180,6 +192,42 @@ artifact's Kotlin-visible API is the extension function `Json.asConverterFactory
 as most examples imply, and not a `KotlinSerializationConverterFactory.create(...)` static call either (that
 method exists in the compiled bytecode but is the JVM-facing implementation of the same extension function,
 not the intended entry point). Easy to get wrong; `di/NetworkModule.kt` has the correct usage.
+
+**Auth session state lives in `AuthRepository.currentUser` (a `StateFlow<UserDto?>`), not a boolean flag.**
+`auth/TokenStore.kt` holds the Sanctum bearer token in `EncryptedSharedPreferences` (it's equivalent to a
+password, not a UI preference) and `auth/AuthInterceptor.kt` attaches it to every request when present.
+`FavoritesViewModel` and other screens collect `currentUser` reactively rather than checking `isSignedIn`
+once, so signing in or out anywhere (e.g. the Settings tab) correctly updates the Favorites tab without
+that screen needing to know it happened. `MainActivity` hydrates `currentUser` from a stored token on cold
+start via `refreshCurrentUser()` — it only clears the token on an actual 401, never on a network error,
+since "can't reach the server right now" isn't the same claim as "this token is invalid."
+
+**Bottom nav (Home/Favorites/Settings) vs. pushed screens (Search/Category/Service Detail).** Only the
+three destinations that make sense to jump between directly are tabs; the rest stay reachable by navigating
+from Home, matching the original screen flow. The "Save" button on Service Detail is a one-way action (adds
+to favorites, prompts sign-in first if needed) with no in-place "unsave" toggle — that matches the spec's
+own mockup, which shows a single `[ Save ]` button; removing a favorite happens from the Favorites tab's own
+delete icon, not from the detail screen.
+
+### Emulator testing gotchas
+
+These cost real time this session — worth not re-learning them:
+
+- **Get tap coordinates from `adb shell uiautomator dump`, not by eyeballing a screenshot.** Screenshots
+  returned to Claude get rescaled for display, and manually estimating "where a button looks like it is"
+  in the rescaled image is consistently off by enough pixels to miss real click targets — this produced a
+  long, wrong detour into suspecting the emulator/Compose touch pipeline was broken when the actual problem
+  was tap coordinates landing in the gaps between elements. `uiautomator dump /sdcard/dump.xml` (then `adb
+  pull`) gives exact `bounds="[x1,y1][x2,y2]"` for every element — compute the center from that, every time.
+- **The Pixel_7 AVD can leave a genuinely stuck instance behind that still answers `adb devices` and renders
+  frames, but stops delivering touch input**, while hardware key events (`KEYCODE_HOME`) still work. The
+  giveaway is `adb shell input tap` doing nothing anywhere in the app, including on elements that worked in
+  a previous session with unchanged code. Killing it from `emulator.exe`/`adb emu kill` is not reliable —
+  the actual VM process is named `qemu-system-x86_64-headless` (note the suffix), not `qemu-system-x86_64`,
+  so a `Stop-Process -Name "qemu-system-x86_64"` misses it silently. Use
+  `Get-Process | Where-Object { $_.ProcessName -like "*qemu*" -or $_.ProcessName -like "*emulator*" } |
+  Stop-Process -Force`, then relaunch with `-no-snapshot` to force a genuine cold boot rather than resuming
+  the stuck saved state.
 
 ## Engineering approach for this project
 
