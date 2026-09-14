@@ -80,8 +80,11 @@ class Service extends Model
 
     public function scopeSearch(Builder $query, string $term): void
     {
+        // whereLike is case-insensitive by default and picks the right SQL
+        // per driver (ILIKE on Postgres) — plain LIKE is case-sensitive on
+        // Postgres, which silently missed matches like "cedula" vs "Cedula".
         $query->where(fn (Builder $query) => $query
-            ->where('name', 'like', "%{$term}%")
-            ->orWhere('description', 'like', "%{$term}%"));
+            ->whereLike('name', "%{$term}%")
+            ->orWhereLike('description', "%{$term}%"));
     }
 }
