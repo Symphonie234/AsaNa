@@ -107,6 +107,25 @@ together) backs `User::favoriteServices(): BelongsToMany`. The spec's ERD (secti
 only the narrative product description (section 9) did — so it was added following the same conventions as
 the rest of the schema, not literally copied from a spec table.
 
+**Google Play purchase verification is hand-rolled, not `google/apiclient`.** `app/Services/Billing/` signs
+a service-account JWT with `firebase/php-jwt`, exchanges it for an OAuth2 access token, then calls the one
+Android Publisher REST endpoint we actually need (`purchases.products.get`) via Laravel's `Http` facade —
+`google/apiclient` generates bindings for Google's entire API surface to reach that same one endpoint, which
+is a lot of weight for a ~30-line OAuth2 flow. `GooglePlayVerifier` is an interface so tests bind a fake
+implementation instead of needing real Google credentials (`tests/Feature/Api/BillingApiTest.php`) — the
+real `GooglePlayApiVerifier` is what runs in production once `GOOGLE_PLAY_SERVICE_ACCOUNT_PATH` is set.
+**This can't be end-to-end tested yet** — it requires a Google Play Console developer account (one-time $25
+registration, only the project owner can do this), the app registered there with the `asanaph.lifetime`
+in-app product created, and a Service Account JSON key. Until then, `/billing/google-play/verify` correctly
+returns a clean 503 ("Billing verification is not configured") rather than crashing — verified live.
+
+**Refund/revocation handling is manual admin action for now, not a Google RTDN webhook.** Real-time
+Developer Notifications (Google's push mechanism for refunds/cancellations) need a Google Cloud Pub/Sub
+topic wired to Play Console — another piece of external account setup that doesn't exist yet. Until it's
+built, the Filament `EntitlementResource` (already in the admin from Milestone 2) lets an admin manually
+flip `status` to `refunded`/`revoked` when Google notifies them by email. Automating that via RTDN is a
+reasonable Milestone 7 (production hardening) follow-up once Play Console exists.
+
 **Entitlements are backend-owned.** The spec's monetization security model (Android sends a Google Play
 purchase token → backend verifies with Google → backend writes the `entitlements` row) is not yet
 implemented (no billing verification endpoint exists yet) — only the schema and admin CRUD exist so far.
@@ -136,8 +155,8 @@ will work.
 
 Kotlin, Jetpack Compose, MVVM + Repository (no separate domain/usecase layer yet — see below), Hilt for DI,
 Retrofit + OkHttp + kotlinx.serialization for networking, Room for offline caching, EncryptedSharedPreferences
-for the auth token, Navigation Compose. Application ID `ph.asana.app`, minSdk 26, compileSdk/targetSdk 35.
-Google Play Billing is not built yet — that's Milestone 6, not built ahead of it.
+for the auth token, Play Billing Library (`billing-ktx`) for the lifetime purchase, Navigation Compose.
+Application ID `ph.asana.app`, minSdk 26, compileSdk/targetSdk 35.
 
 ### Local setup
 
@@ -152,6 +171,23 @@ export JAVA_HOME="/c/Program Files/Android/Android Studio/jbr"   # or Android St
 `php artisan serve` runs) — override per-build with `-PASANA_API_BASE_URL=http://<host>:8000/api/v1/` when
 testing on a physical device on the same network. Cleartext HTTP is allowed only to `10.0.2.2`
 (`res/xml/network_security_config.xml`) — production must be HTTPS against the real domain, don't widen this.
+
+### Turning on real Google Play billing
+
+The code is ready; these are the external, account-holder-only steps nobody but the project owner can do:
+
+1. Register a Google Play Console developer account (one-time $25 fee).
+2. Create the app in Play Console with application ID `ph.asana.app`, upload at least one build to an
+   internal testing track (real purchases — even test ones — require this; a locally-built debug APK alone
+   can't complete a purchase, Play Billing needs the app to be known to Play Console).
+3. Under Monetization → Products → In-app products, create a **managed product** with ID `asanaph.lifetime`
+   (must match exactly — see `BillingRepository.LIFETIME_PRODUCT_ID` and the spec's product ID).
+4. Add license testers (Setup → License testing) so test purchases don't charge a real card.
+5. In Google Cloud Console, create a Service Account linked to the Play Console account, grant it access
+   under Play Console → Users and permissions, enable the Android Publisher API, and download its JSON key.
+6. On the backend, set `GOOGLE_PLAY_SERVICE_ACCOUNT_PATH` to that JSON file's path (and
+   `GOOGLE_PLAY_PACKAGE_NAME` if it's ever not `ph.asana.app`) — `/billing/google-play/verify` picks it up
+   automatically, no code change needed.
 
 ### Architecture notes
 
@@ -223,6 +259,27 @@ from Home, matching the original screen flow. The "Save" button on Service Detai
 to favorites, prompts sign-in first if needed) with no in-place "unsave" toggle — that matches the spec's
 own mockup, which shows a single `[ Save ]` button; removing a favorite happens from the Favorites tab's own
 delete icon, not from the detail screen.
+
+**`BillingRepository` owns its own `CoroutineScope`, unlike every other repository.** Auth/Favorite/content
+repositories are plain suspend-function + `StateFlow` holders that borrow whatever `viewModelScope` calls
+them — that works because every state change they make is triggered by an explicit call from a ViewModel.
+Billing is different: `PurchasesUpdatedListener.onPurchasesUpdated` is a plain callback invoked directly by
+the Play Billing library itself (not by anything our code calls), and the `BillingClient` connection needs
+to live for the whole app process, not one screen's lifecycle. `MainActivity` field-injects it (same pattern
+as `AuthRepository`) purely to force Hilt to construct the singleton — and its `connect()` — at app start.
+
+**`isPremium` comes from our backend, never from what Play Billing reports locally.** `BillingRepository`
+calls `GET /billing/entitlements` to determine premium status and re-checks on every sign-in; a successful
+local purchase only flips `isPremium` after our backend has verified the purchase token with Google and
+recorded an entitlement. This is the same "never trust the client" rule as everywhere else in the app,
+applied to the one place a fake client-side flag would be most tempting to just trust.
+
+**Real purchases can't be tested on this emulator.** The AVD's system image doesn't include Google Play
+Store services, so `BillingClient` can't connect at all here (`"In-app billing API version 3 is not
+supported on this device"`, logged as a warning, not a crash). Confirmed the app degrades gracefully — no
+crash, "Unlock Lifetime Access" falls back to generic text with no live price, Restore Purchases doesn't
+crash either — but the actual purchase flow needs either a real device signed into a Google account, or an
+emulator image with Play Store, *and* the app registered in Play Console with the product created there.
 
 ### Emulator testing gotchas
 
