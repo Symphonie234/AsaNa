@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
+import ph.asana.app.data.FavoriteRepository
 import ph.asana.app.network.AsaNaApiService
 import ph.asana.app.network.model.LoginRequestBody
 import ph.asana.app.network.model.RegisterRequestBody
@@ -18,6 +19,7 @@ class AuthRepository @Inject constructor(
     private val api: AsaNaApiService,
     private val tokenStore: TokenStore,
     private val json: Json,
+    private val favoriteRepository: FavoriteRepository,
 ) {
     private val _currentUser = MutableStateFlow<UserDto?>(null)
     val currentUser: StateFlow<UserDto?> = _currentUser.asStateFlow()
@@ -52,6 +54,7 @@ class AuthRepository @Inject constructor(
         runCatching { api.logout() }
         tokenStore.clear()
         _currentUser.value = null
+        favoriteRepository.clear()
     }
 
     /**
@@ -67,6 +70,7 @@ class AuthRepository @Inject constructor(
             if (e.code() == 401) {
                 tokenStore.clear()
                 _currentUser.value = null
+                favoriteRepository.clear()
             }
         } catch (e: Exception) {
             // Network/parsing issue — leave the stored token alone and retry later.

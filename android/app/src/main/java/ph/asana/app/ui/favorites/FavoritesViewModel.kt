@@ -25,38 +25,30 @@ class FavoritesViewModel @Inject constructor(
     val isSignedIn: Boolean get() = authRepository.isSignedIn
 
     init {
-        // Reloads whenever the signed-in user changes, so returning to this
-        // tab right after signing in (or out) shows the correct state
-        // without the screen having to trigger it manually.
+        // The repository's favorites list is the single shared source of
+        // truth — this just reflects it, so a save from any other screen
+        // (e.g. Service Detail) shows up here immediately, without needing
+        // this screen to be recreated or manually refreshed.
         viewModelScope.launch {
-            authRepository.currentUser.collect { user ->
-                if (user == null) {
-                    _uiState.value = UiState.Success(emptyList())
-                } else {
-                    load()
-                }
-            }
+            favoriteRepository.favorites.collect { _uiState.value = UiState.Success(it) }
+        }
+        viewModelScope.launch {
+            authRepository.currentUser.collect { user -> if (user != null) load() }
         }
     }
 
     fun load() {
-        if (!isSignedIn) {
-            _uiState.value = UiState.Success(emptyList())
-            return
-        }
+        if (!isSignedIn) return
 
         viewModelScope.launch {
             _uiState.value = UiState.Loading
-            favoriteRepository.getFavorites().fold(
-                onSuccess = { _uiState.value = UiState.Success(it) },
-                onFailure = { _uiState.value = UiState.Error("Couldn't load your favorites.") },
-            )
+            favoriteRepository.refresh().onFailure {
+                _uiState.value = UiState.Error("Couldn't load your favorites.")
+            }
         }
     }
 
     fun removeFavorite(slug: String) {
-        viewModelScope.launch {
-            favoriteRepository.removeFavorite(slug).onSuccess { load() }
-        }
+        viewModelScope.launch { favoriteRepository.removeFavorite(slug) }
     }
 }

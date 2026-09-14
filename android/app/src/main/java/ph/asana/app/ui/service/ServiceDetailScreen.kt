@@ -12,11 +12,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -59,6 +64,7 @@ fun ServiceDetailScreen(
     viewModel: ServiceDetailViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val saveButtonState by viewModel.saveButtonState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
@@ -92,13 +98,23 @@ fun ServiceDetailScreen(
                 contentAlignment = Alignment.Center,
             ) { Text(state.message) }
 
-            is UiState.Success -> ServiceDetailContent(padding, state.data, onSave = viewModel::saveFavorite)
+            is UiState.Success -> ServiceDetailContent(
+                padding = padding,
+                service = state.data,
+                saveButtonState = saveButtonState,
+                onSave = viewModel::saveFavorite,
+            )
         }
     }
 }
 
 @Composable
-private fun ServiceDetailContent(padding: PaddingValues, service: ServiceDto, onSave: () -> Unit) {
+private fun ServiceDetailContent(
+    padding: PaddingValues,
+    service: ServiceDto,
+    saveButtonState: SaveButtonState,
+    onSave: () -> Unit,
+) {
     val context = LocalContext.current
 
     LazyColumn(
@@ -144,8 +160,38 @@ private fun ServiceDetailContent(padding: PaddingValues, service: ServiceDto, on
                         OutlinedButton(onClick = { callOffice(context, phone) }) { Text("Contact") }
                     }
                 }
-                OutlinedButton(onClick = onSave) { Text("Save") }
+                SaveButton(saveButtonState, onSave)
             }
+        }
+    }
+}
+
+/**
+ * Save is a fire-and-forget action with a real network round-trip behind
+ * it, so the button needs its own visible state — otherwise a tap can look
+ * like it did nothing until a snackbar appears moments later. SAVING shows
+ * a spinner in place of the label; SAVED disables the button and shows a
+ * checkmark so it's clear the tap registered and succeeded.
+ */
+@Composable
+private fun SaveButton(state: SaveButtonState, onSave: () -> Unit) {
+    when (state) {
+        SaveButtonState.IDLE -> OutlinedButton(onClick = onSave) { Text("Save") }
+
+        SaveButtonState.SAVING -> OutlinedButton(onClick = {}, enabled = false) {
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        }
+
+        SaveButtonState.SAVED -> Button(
+            onClick = {},
+            enabled = false,
+            colors = ButtonDefaults.buttonColors(
+                disabledContainerColor = MaterialTheme.colorScheme.primary,
+                disabledContentColor = MaterialTheme.colorScheme.onPrimary,
+            ),
+        ) {
+            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text(" Saved")
         }
     }
 }

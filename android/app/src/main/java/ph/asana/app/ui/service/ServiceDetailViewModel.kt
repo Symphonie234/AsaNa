@@ -23,6 +23,9 @@ sealed interface SaveFavoriteEvent {
     data object Failed : SaveFavoriteEvent
 }
 
+/** Drives the Save button's own visual state, separate from the one-off [SaveFavoriteEvent]s. */
+enum class SaveButtonState { IDLE, SAVING, SAVED }
+
 @HiltViewModel
 class ServiceDetailViewModel @Inject constructor(
     private val repository: AsaNaRepository,
@@ -35,6 +38,9 @@ class ServiceDetailViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<UiState<ServiceDto>>(UiState.Loading)
     val uiState: StateFlow<UiState<ServiceDto>> = _uiState.asStateFlow()
+
+    private val _saveButtonState = MutableStateFlow(SaveButtonState.IDLE)
+    val saveButtonState: StateFlow<SaveButtonState> = _saveButtonState.asStateFlow()
 
     private val _saveEvents = MutableSharedFlow<SaveFavoriteEvent>()
     val saveEvents = _saveEvents.asSharedFlow()
@@ -59,11 +65,15 @@ class ServiceDetailViewModel @Inject constructor(
             return
         }
 
+        if (_saveButtonState.value != SaveButtonState.IDLE) return
+
         viewModelScope.launch {
+            _saveButtonState.value = SaveButtonState.SAVING
             val event = favoriteRepository.addFavorite(slug).fold(
                 onSuccess = { SaveFavoriteEvent.Saved },
                 onFailure = { SaveFavoriteEvent.Failed },
             )
+            _saveButtonState.value = if (event == SaveFavoriteEvent.Saved) SaveButtonState.SAVED else SaveButtonState.IDLE
             _saveEvents.emit(event)
         }
     }
