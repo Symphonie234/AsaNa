@@ -18,7 +18,7 @@ covered here.
 ```
 AsaNa/
 ├── backend/    Laravel 13 API + Filament admin
-└── android/    Kotlin/Compose app (not yet started)
+└── android/    Kotlin/Compose app
 ```
 
 ## Backend
@@ -101,6 +101,13 @@ implemented (no billing verification endpoint exists yet) — only the schema an
 When building it, the verification call to Google Play must happen server-side; never derive `premium =
 true` from anything the Android client asserts directly.
 
+**Case-insensitive search: use `whereLike`/`orWhereLike`, never raw `like`.** Postgres's `LIKE` is
+case-sensitive; SQLite's (which the test suite runs against) isn't — so a raw `like` scope can pass every
+Pest test and still silently fail to match real user input in production. `Service::scopeSearch()` learned
+this the hard way (searching "cedula" returned nothing against real data, only caught by testing the
+Android app against the live Postgres-backed server, not by the test suite). Laravel's `whereLike()` picks
+the correct case-insensitive SQL per driver — use it for any future free-text search.
+
 ### Machine-level changes made during setup
 
 These aren't project config — they're one-time changes to this machine's global PHP install, done because
@@ -113,8 +120,52 @@ will work.
 
 ## Android
 
-Not started. Per the spec: Kotlin, Jetpack Compose, MVVM + Repository pattern, Hilt, Retrofit, Room (for
-offline caching), Google Play Billing. Do not scaffold this until the backend API it depends on exists.
+### Stack
+
+Kotlin, Jetpack Compose, MVVM + Repository (no separate domain/usecase layer yet — see below), Hilt for DI,
+Retrofit + OkHttp + kotlinx.serialization for networking, Navigation Compose. Application ID `ph.asana.app`,
+minSdk 26, compileSdk/targetSdk 35. Room (offline caching) and Google Play Billing are not built yet —
+they're Milestones 4 and 6, not built ahead of them.
+
+### Local setup
+
+```bash
+cd android
+export JAVA_HOME="/c/Program Files/Android/Android Studio/jbr"   # or Android Studio's bundled JDK
+./gradlew assembleDebug
+```
+
+`local.properties` (gitignored) must contain `sdk.dir=<path to Android SDK>`. The app talks to
+`http://10.0.2.2:8000/api/v1/` by default (the emulator's alias for the host machine's localhost, where
+`php artisan serve` runs) — override per-build with `-PASANA_API_BASE_URL=http://<host>:8000/api/v1/` when
+testing on a physical device on the same network. Cleartext HTTP is allowed only to `10.0.2.2`
+(`res/xml/network_security_config.xml`) — production must be HTTPS against the real domain, don't widen this.
+
+### Architecture notes
+
+**No domain layer yet, on purpose.** The spec's suggested structure has a `domain/model` + `domain/usecase`
+layer between `data` and `feature`. With a single data source (the REST API, no Room yet), that mapping
+layer has nothing real to do — repositories return the network DTOs (`network/model/Dtos.kt`) directly as
+UI state. Revisit this once Room is added in Milestone 4 and there are two sources to reconcile; don't add
+it preemptively.
+
+**Screens are MVVM: Compose UI + Hilt `ViewModel` + shared `UiState<T>`** (`ui/UiState.kt` — a small
+Loading/Success/Error sealed interface reused by all four screens, since they all needed the identical
+shape from day one). `AsaNaRepository` wraps every API call in `runCatching`, so ViewModels never touch
+Retrofit exceptions directly.
+
+**Emergency contacts are hardcoded, and deliberately incomplete.** The Home screen shows only the
+Philippines' National Emergency Hotline (911) — a real, verifiable, nationwide number. Local Danao City
+numbers (police, fire, DRRMO, barangay) are NOT in there, because fabricating plausible-looking emergency
+phone numbers would be actively dangerous if wrong. There's no backend table for these either (not in the
+spec's ERD) — add one (and real, verified numbers) before shipping them.
+
+**Retrofit's kotlinx.serialization converter.** The `com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter`
+artifact's Kotlin-visible API is the extension function `Json.asConverterFactory(mediaType)`, imported from
+`com.jakewharton.retrofit2.converter.kotlinx.serialization` — not `retrofit2.converter.kotlinx.serialization`
+as most examples imply, and not a `KotlinSerializationConverterFactory.create(...)` static call either (that
+method exists in the compiled bytecode but is the JVM-facing implementation of the same extension function,
+not the intended entry point). Easy to get wrong; `di/NetworkModule.kt` has the correct usage.
 
 ## Engineering approach for this project
 
