@@ -7,16 +7,16 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val AsaNaAmber = Color(0xFFF59E0B)
+private val AsaNaBlue = Color(0xFF1098D8)
 
 private val LightColors = lightColorScheme(
-    primary = AsaNaAmber,
+    primary = AsaNaBlue,
     onPrimary = Color.White,
 )
 
 private val DarkColors = darkColorScheme(
-    primary = AsaNaAmber,
-    onPrimary = Color.Black,
+    primary = AsaNaBlue,
+    onPrimary = Color.White,
 )
 
 @Composable

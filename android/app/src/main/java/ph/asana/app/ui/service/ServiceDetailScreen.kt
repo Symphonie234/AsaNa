@@ -35,8 +35,15 @@ import ph.asana.app.network.model.RequirementDto
 import ph.asana.app.network.model.ServiceDto
 import ph.asana.app.network.model.ServiceFeeDto
 import ph.asana.app.ui.UiState
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 private val DAY_NAMES = listOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+private val VERIFIED_DATE_FORMAT = DateTimeFormatter.ofPattern("MMMM yyyy").withZone(ZoneId.systemDefault())
+
+private fun formatVerifiedDate(iso: String): String =
+    runCatching { VERIFIED_DATE_FORMAT.format(Instant.parse(iso)) }.getOrDefault(iso)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,7 +113,7 @@ private fun ServiceDetailContent(padding: PaddingValues, service: ServiceDto) {
         }
 
         service.verifiedAt?.let { verifiedAt ->
-            item { Text("Last verified: $verifiedAt", style = MaterialTheme.typography.bodySmall) }
+            item { Text("Last verified: ${formatVerifiedDate(verifiedAt)}", style = MaterialTheme.typography.bodySmall) }
         }
 
         service.office?.let { office ->
