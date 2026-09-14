@@ -76,4 +76,6 @@ dependencies {
     ksp(libs.room.compiler)
 
     implementation(libs.security.crypto)
+
+    implementation(libs.billing.ktx)
 }

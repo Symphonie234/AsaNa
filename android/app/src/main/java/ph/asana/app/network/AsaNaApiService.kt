@@ -4,12 +4,14 @@ import ph.asana.app.network.model.AuthResultDto
 import ph.asana.app.network.model.CategoryDto
 import ph.asana.app.network.model.CityDto
 import ph.asana.app.network.model.DataEnvelope
+import ph.asana.app.network.model.EntitlementDto
 import ph.asana.app.network.model.FavoriteRequestBody
 import ph.asana.app.network.model.LoginRequestBody
 import ph.asana.app.network.model.PagedEnvelope
 import ph.asana.app.network.model.RegisterRequestBody
 import ph.asana.app.network.model.ServiceDto
 import ph.asana.app.network.model.UserDto
+import ph.asana.app.network.model.VerifyPurchaseRequestBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -58,4 +60,10 @@ interface AsaNaApiService {
 
     @DELETE("me/favorites/{slug}")
     suspend fun removeFavorite(@Path("slug") slug: String): Response<Unit>
+
+    @POST("billing/google-play/verify")
+    suspend fun verifyPurchase(@Body body: VerifyPurchaseRequestBody): DataEnvelope<EntitlementDto>
+
+    @GET("billing/entitlements")
+    suspend fun getEntitlements(): DataEnvelope<List<EntitlementDto>>
 }
