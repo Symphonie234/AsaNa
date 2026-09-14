@@ -123,9 +123,9 @@ will work.
 ### Stack
 
 Kotlin, Jetpack Compose, MVVM + Repository (no separate domain/usecase layer yet — see below), Hilt for DI,
-Retrofit + OkHttp + kotlinx.serialization for networking, Navigation Compose. Application ID `ph.asana.app`,
-minSdk 26, compileSdk/targetSdk 35. Room (offline caching) and Google Play Billing are not built yet —
-they're Milestones 4 and 6, not built ahead of them.
+Retrofit + OkHttp + kotlinx.serialization for networking, Room for offline caching, Navigation Compose.
+Application ID `ph.asana.app`, minSdk 26, compileSdk/targetSdk 35. Google Play Billing is not built yet —
+that's Milestone 6, not built ahead of it.
 
 ### Local setup
 
@@ -144,10 +144,24 @@ testing on a physical device on the same network. Cleartext HTTP is allowed only
 ### Architecture notes
 
 **No domain layer yet, on purpose.** The spec's suggested structure has a `domain/model` + `domain/usecase`
-layer between `data` and `feature`. With a single data source (the REST API, no Room yet), that mapping
-layer has nothing real to do — repositories return the network DTOs (`network/model/Dtos.kt`) directly as
-UI state. Revisit this once Room is added in Milestone 4 and there are two sources to reconcile; don't add
-it preemptively.
+layer between `data` and `feature`. Even now that there are two data sources (network + Room, see below),
+they share the exact same model — repositories return the network DTOs (`network/model/Dtos.kt`) directly
+as UI state, cached and read back as the same DTOs. There's still no real mapping work for a domain layer
+to do. Revisit once a second *shape* of data source shows up (e.g. a local-only favorites list), not before.
+
+**Offline caching is a JSON cache-aside, not a mirrored schema.** `data/local/` has one Room table
+(`CachedResponse`: a `key` string primary key, a `json` blob, `cachedAt`) instead of Room entities that
+mirror the backend's `cities`/`services`/`requirements`/etc. tables. `AsaNaRepository.networkFirst()` tries
+the network, writes the successful response's JSON under a key derived from the request (e.g.
+`"service:barangay-clearance"`, `"services:city=danao-city&category=null"`) on success, and on an `IOException`
+(no connection — not a 404 or a bad response, which are real errors and still fail) falls back to whatever
+JSON is cached under that key, decoded back into the same DTO. This means content becomes available offline
+once it's been viewed online at least once (e.g. looked up at home on wifi, still there later at the office
+with no signal) — it is NOT a "download everything for offline use" cache; a service never opened while
+online has nothing to fall back to and will show an error offline. That's the intentional scope of Milestone
+4's goal ("important service information remains available offline"), not a gap to fix reflexively.
+Mirroring the full relational schema in Room would only be worth the extra entity/mapping code if the app
+needed real offline queries or writes across that data — it doesn't yet.
 
 **Screens are MVVM: Compose UI + Hilt `ViewModel` + shared `UiState<T>`** (`ui/UiState.kt` — a small
 Loading/Success/Error sealed interface reused by all four screens, since they all needed the identical
