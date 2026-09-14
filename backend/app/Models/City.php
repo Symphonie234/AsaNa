@@ -25,4 +25,9 @@ class City extends Model
     {
         return $this->hasMany(Service::class);
     }
+
+    public function getRouteKeyName(): string
+    {
+        return 'slug';
+    }
 }
