@@ -29,9 +29,10 @@ AsaNa/
   targeting a specific PHP version for deployment)
 - PostgreSQL 17, running only in Docker (`backend/docker-compose.yml`) — Laravel itself runs on the host's
   native PHP, not in a container
-- Laravel Sanctum for API auth (SPA/token auth, `routes/api.php` under `/api/v1` per the spec)
+- Laravel Sanctum installed for future API auth (`routes/api.php`); no register/login/logout endpoints yet
+  — deferred to the milestone that needs accounts (favorites/billing), not built ahead of it
 - Filament 4 for the admin panel at `/admin`
-- Pest for testing (spec requirement; test suite not yet built out)
+- Pest for testing (switched from the default PHPUnit-style skeleton per the spec)
 
 ### Local setup
 
@@ -55,8 +56,9 @@ factory default password (`password`) unless changed.
 php artisan migrate:fresh --seed   # rebuild the DB from scratch with seed data
 php artisan tinker                 # inspect models/relationships interactively
 php artisan make:filament-resource <Model> --generate   # scaffold an admin resource from its schema
-vendor/bin/pest                    # run the test suite (once tests exist)
+vendor/bin/pest                    # run the test suite
 vendor/bin/pest --filter=<name>    # run a single test
+vendor/bin/pint                    # fix code style (run before committing)
 ```
 
 ### Architecture notes
@@ -84,6 +86,14 @@ tinker, or a dedicated admin-only action can flip it.
 top-level resources — they only ever make sense in the context of a parent Office/Service, so a global
 "all requirements across all services" list would add navigation noise with no real use. This is a
 deliberate deviation from the resource list in the original spec doc.
+
+**Public API is publish-gated.** `/api/v1/*` (`app/Http/Controllers/Api`) only ever returns services with
+`status = published` — a `Service::scopePublished()` query scope applied in every index/search query, and
+an explicit check in `show()` that 404s a draft/review/outdated/archived service even if someone guesses
+its slug. This means the seeded Barangay Clearance (left in draft, see above) won't appear in the API until
+it's actually published from the admin — that's intentional, not a bug. Route model binding is by `slug`
+(`getRouteKeyName()` on `City`/`Service`), not numeric ID. `search` and the `city`/`category` filters on
+`index` share one `filteredServices()` query builder rather than duplicating the filter logic per route.
 
 **Entitlements are backend-owned.** The spec's monetization security model (Android sends a Google Play
 purchase token → backend verifies with Google → backend writes the `entitlements` row) is not yet
@@ -119,6 +129,15 @@ Play Store release, solo. Act as a senior engineer/architect would, not as a cod
 - Flag security and scalability issues proactively, especially around the billing/entitlement flow and
   anything trusting client-supplied data.
 - Prioritize shipping the MVP over completeness; a small working slice beats a large unfinished one.
+
+## Git workflow
+
+- Commit messages follow the 50/72 rule: subject line ≤50 chars, body wrapped at 72 chars. Keep them
+  concise — a short subject plus a couple of sentences of "why", not an exhaustive changelog.
+- PR titles and descriptions are written in plain language describing what changed — no conventional-commit
+  prefixes like `fix:`/`feat:`.
+- Group commits by logical concern (e.g. "scaffold the app" separate from "add domain schema" separate from
+  "add admin resources") rather than one giant commit or one commit per file.
 
 ## Code quality rules
 
