@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'google_play' => [
+        'package_name' => env('GOOGLE_PLAY_PACKAGE_NAME', 'ph.asana.app'),
+        'service_account_path' => env('GOOGLE_PLAY_SERVICE_ACCOUNT_PATH'),
+    ],
+
 ];

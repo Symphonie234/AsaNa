@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BillingController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\CityController;
 use App\Http\Controllers\Api\FavoriteController;
@@ -28,5 +29,8 @@ Route::prefix('v1')->group(function () {
         Route::get('me/favorites', [FavoriteController::class, 'index']);
         Route::post('me/favorites', [FavoriteController::class, 'store']);
         Route::delete('me/favorites/{service:slug}', [FavoriteController::class, 'destroy']);
+
+        Route::post('billing/google-play/verify', [BillingController::class, 'verify']);
+        Route::get('billing/entitlements', [BillingController::class, 'entitlements']);
     });
 });
