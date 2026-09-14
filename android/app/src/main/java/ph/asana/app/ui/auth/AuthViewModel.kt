@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ph.asana.app.auth.AuthRepository
+import ph.asana.app.network.ApiException
 import javax.inject.Inject
 
 enum class AuthMode { SIGN_IN, REGISTER }
@@ -67,11 +68,12 @@ class AuthViewModel @Inject constructor(
                     _uiState.update { it.copy(isLoading = false) }
                     _events.emit(AuthEvent.SignedIn)
                 },
-                onFailure = {
-                    val message = when (state.mode) {
-                        AuthMode.SIGN_IN -> "Incorrect email or password."
-                        AuthMode.REGISTER -> "Couldn't create your account. Check your details and try again."
-                    }
+                onFailure = { error ->
+                    // ApiException carries the backend's actual validation message
+                    // (e.g. "The email has already been taken."); anything else
+                    // (no connection, etc.) falls back to a generic explanation.
+                    val message = error.message?.takeIf { error is ApiException }
+                        ?: "Couldn't connect. Check your internet connection and try again."
                     _uiState.update { it.copy(isLoading = false, error = message) }
                 },
             )

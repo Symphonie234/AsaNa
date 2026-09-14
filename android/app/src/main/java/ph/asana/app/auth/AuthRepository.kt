@@ -3,10 +3,12 @@ package ph.asana.app.auth
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.json.Json
 import ph.asana.app.network.AsaNaApiService
 import ph.asana.app.network.model.LoginRequestBody
 import ph.asana.app.network.model.RegisterRequestBody
 import ph.asana.app.network.model.UserDto
+import ph.asana.app.network.toApiException
 import retrofit2.HttpException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -15,6 +17,7 @@ import javax.inject.Singleton
 class AuthRepository @Inject constructor(
     private val api: AsaNaApiService,
     private val tokenStore: TokenStore,
+    private val json: Json,
 ) {
     private val _currentUser = MutableStateFlow<UserDto?>(null)
     val currentUser: StateFlow<UserDto?> = _currentUser.asStateFlow()
@@ -22,19 +25,27 @@ class AuthRepository @Inject constructor(
     val isSignedIn: Boolean get() = tokenStore.token != null
 
     suspend fun register(name: String, email: String, password: String): Result<UserDto> =
-        runCatching {
+        try {
             val result = api.register(RegisterRequestBody(name, email, password, password)).data
             tokenStore.token = result.token
             _currentUser.value = result.user
-            result.user
+            Result.success(result.user)
+        } catch (e: HttpException) {
+            Result.failure(e.toApiException(json, "Couldn't create your account. Check your details and try again."))
+        } catch (e: Exception) {
+            Result.failure(e)
         }
 
     suspend fun login(email: String, password: String): Result<UserDto> =
-        runCatching {
+        try {
             val result = api.login(LoginRequestBody(email, password)).data
             tokenStore.token = result.token
             _currentUser.value = result.user
-            result.user
+            Result.success(result.user)
+        } catch (e: HttpException) {
+            Result.failure(e.toApiException(json, "Incorrect email or password."))
+        } catch (e: Exception) {
+            Result.failure(e)
         }
 
     suspend fun logout() {

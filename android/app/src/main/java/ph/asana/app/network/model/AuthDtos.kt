@@ -34,3 +34,9 @@ data class LoginRequestBody(
 data class FavoriteRequestBody(
     val slug: String,
 )
+
+/** Shape of Laravel's validation/error JSON body, e.g. {"message": "...", "errors": {...}}. */
+@Serializable
+data class ApiErrorBody(
+    val message: String,
+)
