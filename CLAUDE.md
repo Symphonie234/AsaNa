@@ -193,6 +193,21 @@ as most examples imply, and not a `KotlinSerializationConverterFactory.create(..
 method exists in the compiled bytecode but is the JVM-facing implementation of the same extension function,
 not the intended entry point). Easy to get wrong; `di/NetworkModule.kt` has the correct usage.
 
+**Favorites is a shared `StateFlow` in `FavoriteRepository`, not per-screen fetches.** Compose Navigation
+preserves a bottom-nav tab's state when you switch away and back (normally what you want), so a screen that
+only loaded favorites in its own `init{}` kept showing a stale list after Service Detail added one
+elsewhere — the save genuinely succeeded on the backend, the Favorites tab just never found out. Every
+mutation (`refresh`/`addFavorite`/`removeFavorite`) updates the same `favorites: StateFlow<List<ServiceDto>>`,
+and any screen collecting it (currently `FavoritesScreen`) reflects changes made by any other screen
+immediately. `AuthRepository.logout()` (and the 401 auto-logout path) calls `favoriteRepository.clear()` so
+a new sign-in doesn't briefly show the previous user's list.
+
+**Auth failures surface the backend's actual message, not a hardcoded string.** `network/ApiException.kt`
+parses Laravel's `{"message": "..."}` validation body out of an `HttpException` (falling back to a generic
+string only when there isn't one, e.g. a real connectivity failure) — a real "The email has already been
+taken." beats a generic "check your details" every time; the latter is what turned an unrelated seeded
+admin account into a support back-and-forth before the actual cause was visible in Logcat.
+
 **Auth session state lives in `AuthRepository.currentUser` (a `StateFlow<UserDto?>`), not a boolean flag.**
 `auth/TokenStore.kt` holds the Sanctum bearer token in `EncryptedSharedPreferences` (it's equivalent to a
 password, not a UI preference) and `auth/AuthInterceptor.kt` attaches it to every request when present.
