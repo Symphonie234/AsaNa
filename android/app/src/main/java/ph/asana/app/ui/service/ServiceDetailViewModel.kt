@@ -47,6 +47,30 @@ class ServiceDetailViewModel @Inject constructor(
 
     init {
         load()
+
+        // Reflects whether this service is already favorited — without this,
+        // opening a service you'd already saved (e.g. tapping it from the
+        // Favorites tab itself) would show "Save" as if it weren't, since
+        // the button previously only tracked what happened during this one
+        // screen visit rather than the actual saved state.
+        viewModelScope.launch {
+            favoriteRepository.favorites.collect { favorites ->
+                if (_saveButtonState.value != SaveButtonState.SAVING) {
+                    _saveButtonState.value = if (favorites.any { it.slug == slug }) {
+                        SaveButtonState.SAVED
+                    } else {
+                        SaveButtonState.IDLE
+                    }
+                }
+            }
+        }
+
+        // The shared favorites list may not have been populated yet this
+        // session (e.g. the user never visited the Favorites tab) — refresh
+        // it so the check above has real data to compare against.
+        if (authRepository.isSignedIn) {
+            viewModelScope.launch { favoriteRepository.refresh() }
+        }
     }
 
     fun load() {
