@@ -30,7 +30,8 @@ Route::prefix('v1')->group(function () {
         Route::post('me/favorites', [FavoriteController::class, 'store']);
         Route::delete('me/favorites/{service:slug}', [FavoriteController::class, 'destroy']);
 
-        Route::post('billing/google-play/verify', [BillingController::class, 'verify']);
+        Route::post('billing/google-play/verify', [BillingController::class, 'verify'])
+            ->middleware('throttle:10,1');
         Route::get('billing/entitlements', [BillingController::class, 'entitlements']);
     });
 });
