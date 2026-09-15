@@ -21,14 +21,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
 import ph.asana.app.billing.BillingEvent
+import ph.asana.app.ui.feedback.FeedbackDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,6 +45,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+    var showFeedbackDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.billingEvents.collect { event ->
@@ -106,6 +110,23 @@ fun SettingsScreen(
                     Text("Restore purchase")
                 }
             }
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+            OutlinedButton(onClick = { showFeedbackDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Report a problem")
+            }
         }
+    }
+
+    if (showFeedbackDialog) {
+        FeedbackDialog(
+            context = "Settings",
+            onDismiss = { showFeedbackDialog = false },
+            onSubmitted = {
+                showFeedbackDialog = false
+                coroutineScope.launch { snackbarHostState.showSnackbar("Thanks — we'll take a look.") }
+            },
+        )
     }
 }

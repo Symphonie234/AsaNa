@@ -6,6 +6,7 @@ import ph.asana.app.network.model.CityDto
 import ph.asana.app.network.model.DataEnvelope
 import ph.asana.app.network.model.EntitlementDto
 import ph.asana.app.network.model.FavoriteRequestBody
+import ph.asana.app.network.model.FeedbackRequestBody
 import ph.asana.app.network.model.LoginRequestBody
 import ph.asana.app.network.model.PagedEnvelope
 import ph.asana.app.network.model.RegisterRequestBody
@@ -66,4 +67,7 @@ interface AsaNaApiService {
 
     @GET("billing/entitlements")
     suspend fun getEntitlements(): DataEnvelope<List<EntitlementDto>>
+
+    @POST("feedback")
+    suspend fun submitFeedback(@Body body: FeedbackRequestBody): Response<Unit>
 }
