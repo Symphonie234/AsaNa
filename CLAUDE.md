@@ -364,6 +364,40 @@ worse, a broken build. Come back to each once the prerequisite exists:
 - **Monitoring** (uptime/error tracking/APM) — same reasoning as backups: needs a real deployed
   environment to monitor. Revisit at deploy time.
 
+## Beta feedback (Milestone 8)
+
+The spec's Milestone 8 is "recruit 10–20 real Danao residents, hand them a task with zero
+explanation, and observe where they get confused" — that's a real-world usability test, not
+something buildable in code. What *was* built is the tooling to support running it:
+
+- **`POST /api/v1/feedback`** — public (no login required, so a tester who isn't a registered
+  user can still report something), rate-limited (`throttle:10,1`) like every other public
+  write endpoint. Captures the message plus `context` (which screen), `app_version`, and
+  `device_info` for triage — and the user id too, if the request happens to carry a valid
+  Sanctum token, but it's never required. Feedback is intentionally **not modeled as a public
+  resource** — no `FeedbackResource` API response, no way to list other people's feedback from
+  the client — it's a one-way "send this to the admin" channel, not user-generated content
+  visible in the app (the spec's MVP exclusions rule out UGC/reviews for a reason).
+- **`/admin/feedback`** (Filament) — read-mostly by design: there's no "create" page, since a
+  fabricated feedback record serves no purpose an admin would need. The submitted fields
+  (`message`, `context`, `app_version`, `device_info`) are shown disabled on the edit page —
+  editing what a real tester actually reported would defeat the point — and the only thing an
+  admin can change is toggling `is_resolved` once they've triaged it. Default-sorted newest
+  first, with a filter for unresolved-only.
+- **Android: Settings → "Report a problem"** — an `AlertDialog` (not a full screen/nav route;
+  a one-off action doesn't need back-stack complexity), wired through a small
+  `FeedbackRepository`/`FeedbackViewModel` pair following the same `Result`-returning,
+  `sealed interface` event pattern used everywhere else in the app (see `AuthViewModel` for
+  the original shape this follows). Verified live end-to-end on the emulator — submitted
+  through the actual Compose dialog, confirmed the row landed in Postgres with the right user,
+  device info (`Google sdk_gphone16k_x86_64, Android 17`), and app version attached.
+
+**Running the actual beta test is documented in
+[docs/milestone-8-beta-testing.md](docs/milestone-8-beta-testing.md)** — the task script,
+what to observe, and a log template. It's still blocked on real people and, for proper
+distribution, the same Play Console setup deferred in Milestone 6 — for now the APK gets
+shared with testers directly (fine at 10–20 people, not a long-term distribution plan).
+
 ## Engineering approach for this project
 
 The user is beginner-to-intermediate (PHP/Laravel/REST background, new to Android) building toward a real
