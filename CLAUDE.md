@@ -387,6 +387,23 @@ Play Store release, solo. Act as a senior engineer/architect would, not as a cod
 - Group commits by logical concern (e.g. "scaffold the app" separate from "add domain schema" separate from
   "add admin resources") rather than one giant commit or one commit per file.
 
+### Branching (per milestone)
+
+Starting from Milestone 8 onward (Milestones 0-7 were built directly on `main`, before this rule
+existed), every milestone gets its own branch instead of committing straight to `main`:
+
+```
+main → develop → AsaNa/{milestone number}-{short-kebab-title}
+```
+
+- `develop` branches off `main` and is the shared integration branch — it doesn't get deleted between
+  milestones.
+- Each milestone branches off `develop`, named `AsaNa/{number}-{title}` (e.g. `AsaNa/8-launch-prep`).
+- Work happens on the milestone branch, merges back into `develop` when the milestone is done and
+  tested, and `develop` merges into `main` when it's ready to ship.
+- Before starting a new milestone's work, make sure `develop` exists and is branched from `main` first
+  if it doesn't already.
+
 ## Code quality rules
 
 - No over-engineering. Solve the problem in front of you, not the one you imagine might show up later.
