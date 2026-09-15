@@ -61,6 +61,11 @@ vendor/bin/pest --filter=<name>    # run a single test
 vendor/bin/pint                    # fix code style (run before committing)
 ```
 
+A root-level `Makefile` wraps the commands above (and the Docker/Android equivalents) for
+convenience — run `make help` from the repo root to see the full list (`make dev`, `make test`,
+`make android-build`, etc.). It's a thin wrapper only; nothing in it is required, and the raw
+commands above always work too.
+
 ### Architecture notes
 
 **Domain model** (`app/Models`): `City` → `Office`/`Service`; `Category` → `Service`; `Office` →
@@ -300,6 +305,64 @@ These cost real time this session — worth not re-learning them:
   `Get-Process | Where-Object { $_.ProcessName -like "*qemu*" -or $_.ProcessName -like "*emulator*" } |
   Stop-Process -Force`, then relaunch with `-no-snapshot` to force a genuine cold boot rather than resuming
   the stuck saved state.
+
+## Production hardening (Milestone 7)
+
+Spec section 35 asks for: Crashlytics, logging, rate limits, backups, monitoring, CI/CD, and a
+security review. Split into what's buildable now versus what needs real external infrastructure
+that doesn't exist yet:
+
+### Done now
+
+- **CI/CD** — `.github/workflows/backend.yml` and `.github/workflows/android.yml`. Backend runs
+  Pint (style) and Pest (tests, against in-memory SQLite, same as local — no services/secrets
+  needed). Android runs `lintDebug`, `testDebugUnitTest`, and `assembleDebug`. Both are
+  path-filtered so an Android-only change doesn't run the backend job and vice versa. Neither
+  workflow needs secrets: there's no `google-services.json` dependency yet (Milestone 6's billing
+  code talks to Google Play's REST API directly, not a Firebase SDK), so nothing breaks in CI.
+- **Rate limiting** — audited and found a real gap: `bootstrap/app.php` used `withRouting(api:
+  ...)` but never called `->throttleApi()`, and no `api` limiter was registered, so **every**
+  endpoint except `auth/register`/`auth/login` (which already had explicit `throttle:5,1`) had no
+  rate limiting at all. Fixed by adding `$middleware->throttleApi()` in `bootstrap/app.php` plus an
+  `api` limiter in `AppServiceProvider::boot()` (60/min, keyed by user ID when authenticated,
+  otherwise IP) as the default floor for every `v1` route. `billing/google-play/verify` gets a
+  tighter `throttle:10,1` on top of that, since it triggers an outbound call to Google's API per
+  request and is the one endpoint where abuse has an external cost. Covered by re-running the full
+  Pest suite after the change (all 30 tests still pass) rather than just eyeballing it — the fix
+  itself broke tests once (`MissingRateLimiterException`) until the `api` limiter was registered,
+  which is exactly the kind of thing that's easy to get half-right.
+- **Security review** — a real pass, not just a checkbox, over what's built so far:
+  - Mass assignment: every model uses `$fillable` (none use `$guarded = []`), and
+    `AuthController::register` writes `$request->validated()`, not raw input. Safe.
+  - Response shape: every API response goes through an explicit-allowlist `JsonResource` — no
+    resource serializes a model directly, so there's no path for `password` or other hidden
+    columns to leak into JSON even by accident.
+  - CORS: no `config/cors.php` and none needed — this API is consumed only by the Android app via
+    Bearer tokens, never by a browser, so there's no cross-origin cookie/session surface to worry
+    about.
+  - Sanctum tokens don't expire (`'expiration' => null`), but `logout()` explicitly revokes the
+    current token (`currentAccessToken()->delete()`). This is a deliberate accepted tradeoff for a
+    single-device mobile app, not an oversight — revisit only if a "sign out of all devices" or
+    remote-wipe feature is ever needed.
+  - Android's `network_security_config.xml` already scopes the cleartext-HTTP exception to
+    `10.0.2.2` only (the emulator's loopback to the host), with a comment warning not to widen it
+    for release builds. Nothing to change there.
+- **Logging** — Laravel's default `stack`/`single` channel is fine as-is for this stage; nothing
+  bespoke needed until there's a real server to ship logs from.
+
+### Deferred — needs real external setup first
+
+These can't be meaningfully built against nothing; doing so now would mean throwaway config or,
+worse, a broken build. Come back to each once the prerequisite exists:
+
+- **Crashlytics** — needs a real Firebase project and a real `google-services.json`. Adding the
+  Crashlytics Gradle plugin without a real config file breaks the Android build outright, so this
+  waits until a Firebase project is created (same "register the external account first" shape as
+  the Play Console checklist above).
+- **Backups** — needs a real production database to back up. Nothing to configure against a local
+  Docker Postgres container; revisit once there's a real hosting target.
+- **Monitoring** (uptime/error tracking/APM) — same reasoning as backups: needs a real deployed
+  environment to monitor. Revisit at deploy time.
 
 ## Engineering approach for this project
 
